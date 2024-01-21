@@ -4,8 +4,6 @@
     - https://github.com/kevinmoran/BeginnerDirect3D11/tree/master
 */
 
-// TODO: instead of assert_hr use something like check_hr
-
 #include <d3d11u.h>
 #include <w32u.h>
 
