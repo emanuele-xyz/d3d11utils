@@ -1,7 +1,10 @@
 /*
     CREDITS:
     - https://gist.github.com/mmozeiko/5e727f845db182d468a34d524508ad5f
+    - https://github.com/kevinmoran/BeginnerDirect3D11/tree/master
 */
+
+// TODO: instead of assert_hr use something like check_hr
 
 #include <d3d11u.h>
 #include <w32u.h>
@@ -185,12 +188,26 @@ int main(void)
     ID3D11Device* device = 0;
     ID3D11DeviceContext* context = 0;
     IDXGISwapChain1* swap_chain = 0;
+    ID3D11RenderTargetView* back_buffer_rtv = 0;
 
     d3d11u_create_device(&device, &context);
     #if defined(D3D11U_DEBUG)
     d3d11u_break_on_errors(device, logger);
     #endif
     d3d11u_create_swap_chain_for_hwnd(device, window, logger, &swap_chain);
+
+    // NOTE: get back buffer render target view
+    {
+        HRESULT hr = S_OK;
+
+        ID3D11Texture2D* back_buffer = 0;
+        hr = IDXGISwapChain1_GetBuffer(swap_chain, 0, &IID_ID3D11Texture2D, &back_buffer);
+        d3d11u_assert_hr(hr);
+        hr = ID3D11Device_CreateRenderTargetView(device, back_buffer, 0, &back_buffer_rtv);
+        d3d11u_assert_hr(hr);
+
+        d3d11u_release(back_buffer);
+    }
 
     while (is_running)
     {
@@ -217,15 +234,19 @@ int main(void)
             }
         }
 
-        // NOTE: present
+        // NOTE: render and present
         {
+            float clear_color[] = { 0.1f, 0.2f, 0.6f, 1.0f };
+            ID3D11DeviceContext_ClearRenderTargetView(context, back_buffer_rtv, clear_color);
             HRESULT hr = IDXGISwapChain1_Present(swap_chain, 1, 0); // TODO: can fail
         }
     }
 
-    ID3D11Device_Release(device);
-    ID3D11DeviceContext_Release(context);
-    IDXGISwapChain1_Release(swap_chain);
+    d3d11u_release(back_buffer_rtv);
+    d3d11u_release(swap_chain);
+    d3d11u_release(context);
+    d3d11u_release(device);
+
     DestroyWindow(window);
     UnregisterClassA(class_name, 0);
 
