@@ -1,3 +1,8 @@
+/*
+    CREDITS:
+    - https://gist.github.com/mmozeiko/5e727f845db182d468a34d524508ad5f
+*/
+
 #include <d3d11u.h>
 #include <w32u.h>
 
@@ -62,6 +67,8 @@ LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 #define next_input(idx) (((idx) + 1) % 2)
 #define prev_input(idx) next_input(idx)
 
+#define d3d11u_assert_hr(hr) w32u_assert(SUCCEEDED(hr))
+
 int main(void)
 {
     w32u_logger logger = { 0 };
@@ -89,14 +96,81 @@ int main(void)
     HWND window = w32u_create_window(class_name, "Window", 1280, 720, WS_OVERLAPPEDWINDOW, window_proc, &window_data);
     w32u_assert(window);
 
+    HRESULT hr = S_OK;
+    ID3D11Device* device = 0;
+    ID3D11DeviceContext* context = 0;
+
+    // NOTE: Create d3d11 device and context
+    {
+        UINT flags = 0;
+        #if defined(D3D11U_DEBUG)
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
+        #endif
+        D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0 };
+        hr = D3D11CreateDevice(0, D3D_DRIVER_TYPE_HARDWARE, 0, flags, levels, sizeof(levels) / sizeof(levels[0]), D3D11_SDK_VERSION, &device, 0, &context);
+        d3d11u_assert_hr(hr);
+    }
+
+    // NOTE: Enable debug break on D3D11 and DXGI API errors
+    {
+        {
+            ID3D11InfoQueue* info = 0;
+            hr = ID3D11Device_QueryInterface(device, &IID_ID3D11InfoQueue, &info); // TODO: can fail
+            hr = ID3D11InfoQueue_SetBreakOnSeverity(info, D3D11_MESSAGE_SEVERITY_CORRUPTION, 1); // TODO: can fail
+            hr = ID3D11InfoQueue_SetBreakOnSeverity(info, D3D11_MESSAGE_SEVERITY_ERROR, 1); // TODO: can fail
+            ID3D11InfoQueue_Release(info);
+        }
+
+        {
+            IDXGIInfoQueue* info = 0;
+            hr = DXGIGetDebugInterface1(0, &IID_IDXGIInfoQueue, &info); // TODO: can fail
+            hr = IDXGIInfoQueue_SetBreakOnSeverity(info, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_CORRUPTION, 1); // TODO: can fail
+            hr = IDXGIInfoQueue_SetBreakOnSeverity(info, DXGI_DEBUG_ALL, DXGI_INFO_QUEUE_MESSAGE_SEVERITY_ERROR, 1); // TODO: can fail
+            IDXGIInfoQueue_Release(info);
+        }
+    }
+
+    // NOTE: create DXGI swap chain
+    IDXGISwapChain1* swap_chain = 0;
+    {
+        IDXGIDevice* dxgi_device = 0;
+        hr = ID3D11Device_QueryInterface(device, &IID_IDXGIDevice, &dxgi_device);
+        d3d11u_assert_hr(hr);
+
+        IDXGIAdapter* dxgi_adapter = 0;
+        hr = IDXGIDevice_GetAdapter(dxgi_device, &dxgi_adapter);
+        d3d11u_assert_hr(hr);
+
+        IDXGIFactory2* factory = 0;
+        hr = IDXGIAdapter_GetParent(dxgi_adapter, &IID_IDXGIFactory2, &factory);
+        d3d11u_assert_hr(hr);
+
+        DXGI_SWAP_CHAIN_DESC1 desc = { 0 };
+        desc.Width = 0; // NOTE: get width from output window
+        desc.Height = 0; // NOTE: get height from output window
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // NOTE: or DXGI_FORMAT_R8G8B8A8_UNORM_SRGB for sRGB
+        desc.Stereo = 0;
+        desc.SampleDesc = (DXGI_SAMPLE_DESC){ .Count = 1, .Quality = 0 };
+        desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        desc.BufferCount = 2;
+        desc.Scaling = DXGI_SCALING_NONE;
+        desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        desc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+        desc.Flags = 0;
+
+        hr = IDXGIFactory2_CreateSwapChainForHwnd(factory, device, window, &desc, 0, 0, &swap_chain);
+        d3d11u_assert_hr(hr);
+
+        // NOTE: disable Alt+Enter changing monitor resolution to match window size
+        hr = IDXGIFactory_MakeWindowAssociation(factory, window, DXGI_MWA_NO_ALT_ENTER); // TODO: may fail
+
+        IDXGIFactory2_Release(factory);
+        IDXGIAdapter_Release(dxgi_adapter);
+        IDXGIDevice_Release(dxgi_device);
+    }
+
     while (is_running)
     {
-        /*
-            NOTE:
-            Make next input state current and copy the previous state to the current state.
-            We clear the mouse wheel, since mouse wheel input is not permanent between frames.
-            At the end, remember to update the window data struct.
-        */
         input_idx = next_input(input_idx);
         input_buf[curr_input(input_idx)] = input_buf[prev_input(input_idx)];
         input_buf[curr_input(input_idx)].mouse.wheel = 0;
@@ -119,8 +193,16 @@ int main(void)
                 w32u_trace(logger, "Just pressed T ...");
             }
         }
+
+        // NOTE: present
+        {
+            hr = IDXGISwapChain1_Present(swap_chain, 1, 0); // TODO: can fail
+        }
     }
 
+    ID3D11Device_Release(device);
+    ID3D11DeviceContext_Release(context);
+    IDXGISwapChain1_Release(swap_chain);
     DestroyWindow(window);
     UnregisterClassA(class_name, 0);
 
