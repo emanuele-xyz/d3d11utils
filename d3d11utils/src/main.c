@@ -158,6 +158,19 @@ void d3d11u_create_swap_chain_for_hwnd(ID3D11Device* device, HWND window, w32u_l
     #undef warn_if_not_ok
 }
 
+void d3d11u_get_swap_chain_back_buffer_rtv(IDXGISwapChain1* swap_chain, ID3D11Device* device, ID3D11RenderTargetView** out_back_buffer_rtv)
+{
+    HRESULT hr = S_OK;
+
+    ID3D11Texture2D* back_buffer = 0;
+    hr = IDXGISwapChain1_GetBuffer(swap_chain, 0, &IID_ID3D11Texture2D, &back_buffer);
+    d3d11u_assert_hr(hr);
+    hr = ID3D11Device_CreateRenderTargetView(device, back_buffer, 0, out_back_buffer_rtv);
+    d3d11u_assert_hr(hr);
+
+    d3d11u_release(back_buffer);
+}
+
 int main(void)
 {
     w32u_logger logger = { 0 };
@@ -195,19 +208,7 @@ int main(void)
     d3d11u_break_on_errors(device, logger);
     #endif
     d3d11u_create_swap_chain_for_hwnd(device, window, logger, &swap_chain);
-
-    // NOTE: get back buffer render target view
-    {
-        HRESULT hr = S_OK;
-
-        ID3D11Texture2D* back_buffer = 0;
-        hr = IDXGISwapChain1_GetBuffer(swap_chain, 0, &IID_ID3D11Texture2D, &back_buffer);
-        d3d11u_assert_hr(hr);
-        hr = ID3D11Device_CreateRenderTargetView(device, back_buffer, 0, &back_buffer_rtv);
-        d3d11u_assert_hr(hr);
-
-        d3d11u_release(back_buffer);
-    }
+    d3d11u_get_swap_chain_back_buffer_rtv(swap_chain, device, &back_buffer_rtv);
 
     while (is_running)
     {
