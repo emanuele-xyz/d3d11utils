@@ -12,6 +12,7 @@
 typedef struct window_data
 {
     int* is_running;
+    int* was_resized;
     w32u_input_state* input_state;
 } window_data;
 
@@ -19,6 +20,7 @@ LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     window_data* data = (window_data*)GetWindowLongPtrA(hwnd, GWLP_USERDATA);
     int* is_running = data->is_running;
+    int* was_resized = data->was_resized;
     w32u_input_state* input_state = data->input_state;
 
     LRESULT result = 0;
@@ -28,6 +30,10 @@ LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     {
         *is_running = 0;
         result = 0;
+    } break;
+    case WM_SIZE:
+    {
+        *was_resized = 1;
     } break;
     case WM_MOUSEWHEEL:
     {
@@ -70,24 +76,19 @@ LRESULT window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 #define next_input(idx) (((idx) + 1) % 2)
 #define prev_input(idx) next_input(idx)
 
-#define d3d11u_assert_hr(hr) w32u_assert(SUCCEEDED(hr))
-
 void d3d11u_create_device(ID3D11Device** out_device, ID3D11DeviceContext** out_context)
 {
-    HRESULT hr = S_OK;
-
     UINT flags = 0;
     #if defined(D3D11U_DEBUG)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
     #endif
     D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0 };
-    hr = D3D11CreateDevice(0, D3D_DRIVER_TYPE_HARDWARE, 0, flags, levels, sizeof(levels) / sizeof(levels[0]), D3D11_SDK_VERSION, out_device, 0, out_context);
-    d3d11u_assert_hr(hr);
+    w32u_check_hr(D3D11CreateDevice(0, D3D_DRIVER_TYPE_HARDWARE, 0, flags, levels, sizeof(levels) / sizeof(levels[0]), D3D11_SDK_VERSION, out_device, 0, out_context));
 }
 
 void d3d11u_break_on_errors(ID3D11Device* device, w32u_logger logger)
 {
-    #define warn_if_not_ok(call) { hr = (call); if (!(SUCCEEDED(hr))) w32u_warn(logger, __FILE__ "(" w32u_to_string(__LINE__) "): " #call " failed"); }
+    #define warn_if_not_ok(call) { hr = (call); if (!(SUCCEEDED(hr))) w32u_warn(logger, __FILE__ "(" w32u_stringify(__LINE__) "): " #call " failed"); }
 
     HRESULT hr = S_OK;
     {
@@ -116,21 +117,14 @@ void d3d11u_break_on_errors(ID3D11Device* device, w32u_logger logger)
 
 void d3d11u_create_swap_chain_for_hwnd(ID3D11Device* device, HWND window, w32u_logger logger, IDXGISwapChain1** out_swap_chain)
 {
-    #define warn_if_not_ok(call) { hr = (call); if (!(SUCCEEDED(hr))) w32u_warn(logger, __FILE__ "(" w32u_to_string(__LINE__) "): " #call " failed"); }
-
-    HRESULT hr = S_OK;
+    #define warn_if_not_ok(call) { HRESULT hr = (call); if (!(SUCCEEDED(hr))) w32u_warn(logger, __FILE__ "(" w32u_stringify(__LINE__) "): " #call " failed"); }
 
     IDXGIDevice* dxgi_device = 0;
-    hr = ID3D11Device_QueryInterface(device, &IID_IDXGIDevice, &dxgi_device);
-    d3d11u_assert_hr(hr);
-
+    w32u_check_hr(ID3D11Device_QueryInterface(device, &IID_IDXGIDevice, &dxgi_device));
     IDXGIAdapter* dxgi_adapter = 0;
-    hr = IDXGIDevice_GetAdapter(dxgi_device, &dxgi_adapter);
-    d3d11u_assert_hr(hr);
-
+    w32u_check_hr(IDXGIDevice_GetAdapter(dxgi_device, &dxgi_adapter));
     IDXGIFactory2* factory = 0;
-    hr = IDXGIAdapter_GetParent(dxgi_adapter, &IID_IDXGIFactory2, &factory);
-    d3d11u_assert_hr(hr);
+    w32u_check_hr(IDXGIAdapter_GetParent(dxgi_adapter, &IID_IDXGIFactory2, &factory));
 
     DXGI_SWAP_CHAIN_DESC1 desc = { 0 };
     desc.Width = 0; // NOTE: get width from output window
@@ -145,8 +139,7 @@ void d3d11u_create_swap_chain_for_hwnd(ID3D11Device* device, HWND window, w32u_l
     desc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
     desc.Flags = 0;
 
-    hr = IDXGIFactory2_CreateSwapChainForHwnd(factory, device, window, &desc, 0, 0, out_swap_chain);
-    d3d11u_assert_hr(hr);
+    w32u_check_hr(IDXGIFactory2_CreateSwapChainForHwnd(factory, device, window, &desc, 0, 0, out_swap_chain));
 
     // NOTE: disable Alt+Enter changing monitor resolution to match window size
     warn_if_not_ok(IDXGIFactory_MakeWindowAssociation(factory, window, DXGI_MWA_NO_ALT_ENTER));
@@ -160,14 +153,9 @@ void d3d11u_create_swap_chain_for_hwnd(ID3D11Device* device, HWND window, w32u_l
 
 void d3d11u_get_swap_chain_back_buffer_rtv(IDXGISwapChain1* swap_chain, ID3D11Device* device, ID3D11RenderTargetView** out_back_buffer_rtv)
 {
-    HRESULT hr = S_OK;
-
     ID3D11Texture2D* back_buffer = 0;
-    hr = IDXGISwapChain1_GetBuffer(swap_chain, 0, &IID_ID3D11Texture2D, &back_buffer);
-    d3d11u_assert_hr(hr);
-    hr = ID3D11Device_CreateRenderTargetView(device, back_buffer, 0, out_back_buffer_rtv);
-    d3d11u_assert_hr(hr);
-
+    w32u_check_hr(IDXGISwapChain1_GetBuffer(swap_chain, 0, &IID_ID3D11Texture2D, &back_buffer));
+    w32u_check_hr(ID3D11Device_CreateRenderTargetView(device, back_buffer, 0, out_back_buffer_rtv));
     d3d11u_release(back_buffer);
 }
 
@@ -183,20 +171,20 @@ int main(void)
     w32u_input_state input_buf[2] = { 0 };
     int input_idx = 0;
 
-    BOOL is_dpi_aware = w32u_make_dpi_aware();
-    w32u_assert(is_dpi_aware);
+    w32u_check(w32u_make_dpi_aware());
 
     const char* class_name = "my_window_class_name";
-    ATOM class_registered = w32u_register_window_class(class_name);
-    w32u_assert(class_registered);
+    w32u_check(w32u_register_window_class(class_name));
 
     int is_running = 1;
+    int was_resized = 0;
     window_data window_data = { 0 };
     window_data.is_running = &is_running;
+    window_data.was_resized = &was_resized;
     window_data.input_state = &input_buf[curr_input(input_idx)];
 
-    HWND window = w32u_create_window(class_name, "Window", 1280, 720, WS_OVERLAPPEDWINDOW, window_proc, &window_data);
-    w32u_assert(window);
+    HWND window = 0;
+    w32u_check(w32u_create_window(class_name, "Window", 1280, 720, WS_OVERLAPPEDWINDOW, window_proc, &window_data, &window));
 
     ID3D11Device* device = 0;
     ID3D11DeviceContext* context = 0;
@@ -224,6 +212,16 @@ int main(void)
                 TranslateMessage(&msg);
                 DispatchMessageA(&msg);
             }
+        }
+
+        if (was_resized)
+        {
+            ID3D11DeviceContext_ClearState(context);
+            d3d11u_release(back_buffer_rtv);
+            // TODO: may need to release depth buffer
+            w32u_check_hr(IDXGISwapChain1_ResizeBuffers(swap_chain, 0, 0, 0, DXGI_FORMAT_UNKNOWN, 0)); // TODO: instead of crash we may just warn
+            d3d11u_get_swap_chain_back_buffer_rtv(swap_chain, device, &back_buffer_rtv);
+            was_resized = 0;
         }
 
         {
