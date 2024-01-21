@@ -44,5 +44,8 @@
     <ClInclude Include="vendor\w32utils\include\w32u_windows.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="vendor\w32utils\include\w32u_macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
