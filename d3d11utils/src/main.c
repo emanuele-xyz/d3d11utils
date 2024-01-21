@@ -1,9 +1,3 @@
-/*
-    CREDITS:
-    - https://gist.github.com/mmozeiko/5e727f845db182d468a34d524508ad5f
-    - https://github.com/kevinmoran/BeginnerDirect3D11/tree/master
-*/
-
 #include <d3d11u.h>
 #include <w32u.h>
 
