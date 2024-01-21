@@ -17,3 +17,7 @@ This library is *Windows* only.
 
 ## Future Development
 TODO
+
+## TODOs
+
+- [ ] Enumerate adapters
